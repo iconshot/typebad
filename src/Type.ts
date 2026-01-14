@@ -1,6 +1,6 @@
 export type InputType<T> = T extends Type<infer U> ? U : never;
 
-type InputSchema<T extends TypeSchema> = Simplify<
+export type InputSchema<T extends TypeSchema> = Simplify<
   {
     [K in keyof T as undefined extends InputType<T[K]>
       ? never
@@ -26,7 +26,7 @@ type IsTuple<T> = T extends readonly any[]
     : true
   : false;
 
-type OutputValue<T> = T extends undefined
+export type OutputValue<T> = T extends undefined
   ? OutputValue<Exclude<T, undefined>>
   : T extends Date
   ? Date

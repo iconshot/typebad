@@ -1,6 +1,6 @@
 {
   "name": "typebad",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Efficient type validator for complex structures.",
   "repository": {
     "type": "git",
