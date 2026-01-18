@@ -5,8 +5,8 @@ export type InputSchema<T extends TypeSchema> = Simplify<
     [K in keyof T as undefined extends InputType<T[K]>
       ? never
       : unknown extends InputType<T[K]>
-      ? never
-      : K]: InputType<T[K]>;
+        ? never
+        : K]: InputType<T[K]>;
   } & {
     [K in keyof T as undefined extends InputType<T[K]>
       ? unknown extends InputType<T[K]>
@@ -29,26 +29,26 @@ type IsTuple<T> = T extends readonly any[]
 export type OutputValue<T> = T extends undefined
   ? OutputValue<Exclude<T, undefined>>
   : T extends Date
-  ? Date
-  : IsTuple<T> extends true
-  ? {
-      [K in keyof T]: OutputValue<T[K]>;
-    }
-  : T extends (infer U)[]
-  ? OutputValue<U>[]
-  : T extends Record<string, any>
-  ? {
-      [K in keyof T]-?: OutputValue<T[K]>;
-    }
-  : T;
+    ? Date
+    : IsTuple<T> extends true
+      ? {
+          [K in keyof T]: OutputValue<T[K]>;
+        }
+      : T extends (infer U)[]
+        ? OutputValue<U>[]
+        : T extends Record<string, any>
+          ? {
+              [K in keyof T]-?: OutputValue<T[K]>;
+            }
+          : T;
 
 type ExtendedValue<T> = T extends Date
   ? Date
   : T extends any[]
-  ? any[]
-  : T extends Record<string, any>
-  ? Record<string, any>
-  : T;
+    ? any[]
+    : T extends Record<string, any>
+      ? Record<string, any>
+      : T;
 
 export type OutputType<T extends Type<any>> = OutputValue<InputType<T>>;
 
@@ -62,23 +62,15 @@ export class Type<T> {
   private parser: (
     value: T,
     propertyName: string | null,
-    options: ParseOptions
+    options: ParseOptions,
   ) => any = (value): any => value;
 
-  private onParseCallback: ((value: OutputValue<T>) => void) | null = null;
-
   private allowMissingProperty: boolean = false;
-
-  public onParse(callback: (value: OutputValue<T>) => void): Type<T> {
-    this.onParseCallback = callback;
-
-    return this;
-  }
 
   private parse(
     value: any,
     propertyName: string | null,
-    options: ParseOptions
+    options: ParseOptions,
   ): any {
     const isMatching = this.matcher(value);
 
@@ -88,20 +80,10 @@ export class Type<T> {
 
     const parsedValue = this.parser(value, propertyName, options) ?? null;
 
-    this.onParseCallback?.(parsedValue);
-
     return parsedValue;
   }
 
-  private isFinalType(): boolean {
-    return this.onParseCallback !== null;
-  }
-
   public extend(matcher: (value: ExtendedValue<T>) => boolean): Type<T> {
-    if (this.isFinalType()) {
-      throw new Error("Cannot extend a Type that has onParse callback.");
-    }
-
     const type: Type<T> = new Type();
 
     type.matcher = (value): boolean => {
@@ -116,10 +98,6 @@ export class Type<T> {
   }
 
   public nullable(): Type<T | null> {
-    if (this.isFinalType()) {
-      throw new Error("Cannot extend a Type that has onParse callback.");
-    }
-
     const type: Type<T | null> = new Type();
 
     type.matcher = (value): boolean => {
@@ -144,10 +122,6 @@ export class Type<T> {
   }
 
   public optional(): Type<T | null | undefined> {
-    if (this.isFinalType()) {
-      throw new Error("Cannot extend a Type that has onParse callback.");
-    }
-
     const type: Type<T | null | undefined> = new Type();
 
     type.matcher = (value): boolean => {
@@ -168,16 +142,10 @@ export class Type<T> {
 
     type.allowMissingProperty = true;
 
-    (type as any).onParseCallback = this.onParseCallback;
-
     return type;
   }
 
   public default(defaultValue: T | (() => T)): Type<T | undefined> {
-    if (this.isFinalType()) {
-      throw new Error("Cannot extend a Type that has onParse callback.");
-    }
-
     const type: Type<T | undefined> = new Type();
 
     type.matcher = (value): boolean => {
@@ -195,7 +163,7 @@ export class Type<T> {
             ? (defaultValue as any)()
             : defaultValue;
 
-        return this.parser(tmpValue, propertyName, options);
+        return this.parse(tmpValue, propertyName, options);
       }
 
       return this.parser(value, propertyName, options);
@@ -214,8 +182,8 @@ export class Type<T> {
     return type;
   }
 
-  public static enum<const V extends readonly (string | number)[]>(
-    values: V
+  public static enum<const V extends readonly (string | number | boolean)[]>(
+    values: V,
   ): Type<V[number]> {
     const type: Type<V[number]> = new Type();
 
@@ -226,8 +194,34 @@ export class Type<T> {
     return type;
   }
 
+  public static value<const V extends string | number | boolean>(
+    value: V,
+  ): Type<V | undefined> {
+    const type: Type<V | undefined> = new Type();
+
+    type.matcher = (tmpValue): boolean => {
+      if (tmpValue === undefined) {
+        return true;
+      }
+
+      return tmpValue === value;
+    };
+
+    type.parser = (tmpValue, propertyName, options): V => {
+      if (tmpValue === undefined) {
+        return value;
+      }
+
+      return tmpValue;
+    };
+
+    type.allowMissingProperty = true;
+
+    return type;
+  }
+
   public static array<T extends Type<any>>(
-    elementType: T
+    elementType: T,
   ): Type<InputType<T>[]> {
     const type: Type<any[]> = new Type();
 
@@ -290,7 +284,7 @@ export class Type<T> {
   }
 
   public static union<U extends Type<any>[]>(
-    types: U
+    types: U,
   ): Type<InputType<U[number]>> {
     const type: Type<InputType<U[number]>> = new Type();
 
@@ -318,7 +312,7 @@ export class Type<T> {
   }
 
   public static tuple<const U extends Type<any>[]>(
-    types: U
+    types: U,
   ): Type<{ [K in keyof U]: InputType<U[K]> }> {
     const type = new Type<any[]>();
 
@@ -360,7 +354,7 @@ export class Type<T> {
   public static parse<T extends Type<any>>(
     type: T,
     value: InputType<T>,
-    options: Partial<ParseOptions> = {}
+    options: Partial<ParseOptions> = {},
   ): OutputType<T> {
     const tmpOptions: ParseOptions = {
       allowUnknownProperties: options.allowUnknownProperties ?? false,
@@ -385,26 +379,26 @@ export class Type<T> {
   }
 
   public static readonly String = Type.match<string>(
-    (value): boolean => typeof value === "string"
+    (value): boolean => typeof value === "string",
   );
 
   public static readonly Boolean = Type.match<boolean>(
-    (value): boolean => typeof value === "boolean"
+    (value): boolean => typeof value === "boolean",
   );
 
   public static readonly Number = Type.match<number>(
-    (value): boolean => typeof value === "number"
+    (value): boolean => typeof value === "number",
   );
 
   public static readonly Integer = Type.match<number>(
-    (value): boolean => typeof value === "number" && Number.isInteger(value)
+    (value): boolean => typeof value === "number" && Number.isInteger(value),
   );
 
   public static readonly Float = Type.match<number>(
-    (value): boolean => typeof value === "number" && !Number.isInteger(value)
+    (value): boolean => typeof value === "number" && !Number.isInteger(value),
   );
 
   public static readonly Date = Type.match<Date>(
-    (value): boolean => value instanceof Date
+    (value): boolean => value instanceof Date,
   );
 }
