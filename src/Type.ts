@@ -1,24 +1,14 @@
-export type InputType<T> = T extends Type<infer U> ? U : never;
+export type TypeInternal<T> = T extends Type<infer U> ? U : never;
 
-export type InputSchema<T extends TypeSchema> = Simplify<
-  {
-    [K in keyof T as undefined extends InputType<T[K]>
-      ? never
-      : unknown extends InputType<T[K]>
-        ? never
-        : K]: InputType<T[K]>;
-  } & {
-    [K in keyof T as undefined extends InputType<T[K]>
-      ? unknown extends InputType<T[K]>
-        ? never
-        : K
-      : never]?: InputType<T[K]>;
-  }
->;
-
-type Simplify<T> = { [K in keyof T]: T[K] } & {};
+export type TypeInternalSchema<T extends TypeSchema> = {
+  [K in keyof T]: TypeInternal<T[K]>;
+} & {};
 
 export type TypeSchema = Record<string, Type<any>>;
+
+export type ConstType<T> = T & { __const: true };
+
+type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
 type IsTuple<T> = T extends readonly any[]
   ? number extends T["length"]
@@ -26,31 +16,59 @@ type IsTuple<T> = T extends readonly any[]
     : true
   : false;
 
-export type OutputValue<T> = T extends undefined
-  ? OutputValue<Exclude<T, undefined>>
-  : T extends Date
-    ? Date
+export type TypeInput<T> = T extends Type<infer U> ? TypeInputValue<U> : never;
+
+export type TypeInputValue<T> =
+  T extends ConstType<infer U>
+    ? U
     : IsTuple<T> extends true
-      ? {
-          [K in keyof T]: OutputValue<T[K]>;
-        }
+      ? { [K in keyof T]: TypeInputValue<T[K]> }
       : T extends (infer U)[]
-        ? OutputValue<U>[]
-        : T extends Record<string, any>
-          ? {
-              [K in keyof T]-?: OutputValue<T[K]>;
-            }
+        ? TypeInputValue<U>[]
+        : T extends object
+          ? TypeInputObject<T>
           : T;
 
-type ExtendedValue<T> = T extends Date
-  ? Date
-  : T extends any[]
-    ? any[]
-    : T extends Record<string, any>
-      ? Record<string, any>
-      : T;
+export type TypeInputObject<T> = Simplify<
+  {
+    [K in keyof T as undefined extends TypeInputValue<T[K]>
+      ? never
+      : unknown extends TypeInputValue<T[K]>
+        ? never
+        : K]: TypeInputValue<T[K]>;
+  } & {
+    [K in keyof T as undefined extends TypeInputValue<T[K]>
+      ? unknown extends TypeInputValue<T[K]>
+        ? never
+        : K
+      : never]?: TypeInputValue<T[K]>;
+  }
+>;
 
-export type OutputType<T extends Type<any>> = OutputValue<InputType<T>>;
+export type TypeOutput<T extends Type<any>> = TypeOutputValue<TypeInternal<T>>;
+
+export type TypeOutputValue<T> = T extends undefined
+  ? TypeOutputValue<Exclude<T, undefined>>
+  : T extends ConstType<infer U>
+    ? U
+    : IsTuple<T> extends true
+      ? { [K in keyof T]: TypeOutputValue<T[K]> }
+      : T extends (infer U)[]
+        ? TypeOutputValue<U>[]
+        : T extends object
+          ? { [K in keyof T]: TypeOutputValue<T[K]> }
+          : T;
+
+type ExtendedValue<T> =
+  T extends ConstType<infer U>
+    ? U
+    : IsTuple<T> extends true
+      ? { [K in keyof T]: any }
+      : T extends any[]
+        ? any[]
+        : T extends object
+          ? Record<string, any>
+          : T;
 
 export interface ParseOptions {
   allowUnknownProperties: boolean;
@@ -222,7 +240,7 @@ export class Type<T> {
 
   public static array<T extends Type<any>>(
     elementType: T,
-  ): Type<InputType<T>[]> {
+  ): Type<TypeInternal<T>[]> {
     const type: Type<any[]> = new Type();
 
     type.matcher = (value): boolean => {
@@ -240,7 +258,9 @@ export class Type<T> {
     return type;
   }
 
-  public static object<S extends TypeSchema>(schema: S): Type<InputSchema<S>> {
+  public static object<S extends TypeSchema>(
+    schema: S,
+  ): Type<TypeInternalSchema<S>> {
     const type: Type<Record<string, any>> = new Type();
 
     type.matcher = (value): boolean => {
@@ -285,8 +305,8 @@ export class Type<T> {
 
   public static union<U extends Type<any>[]>(
     types: U,
-  ): Type<InputType<U[number]>> {
-    const type: Type<InputType<U[number]>> = new Type();
+  ): Type<TypeInternal<U[number]>> {
+    const type: Type<TypeInternal<U[number]>> = new Type();
 
     type.matcher = (value): boolean => {
       for (const tmpType of types) {
@@ -313,7 +333,7 @@ export class Type<T> {
 
   public static tuple<const U extends Type<any>[]>(
     types: U,
-  ): Type<{ [K in keyof U]: InputType<U[K]> }> {
+  ): Type<{ [K in keyof U]: TypeInternal<U[K]> }> {
     const type = new Type<any[]>();
 
     type.matcher = (value): boolean => {
@@ -353,9 +373,9 @@ export class Type<T> {
 
   public static parse<T extends Type<any>>(
     type: T,
-    value: InputType<T>,
+    value: TypeInput<T>,
     options: Partial<ParseOptions> = {},
-  ): OutputType<T> {
+  ): TypeOutput<T> {
     const tmpOptions: ParseOptions = {
       allowUnknownProperties: options.allowUnknownProperties ?? false,
     };
@@ -398,7 +418,7 @@ export class Type<T> {
     (value): boolean => typeof value === "number" && !Number.isInteger(value),
   );
 
-  public static readonly Date = Type.match<Date>(
+  public static readonly Date = Type.match<ConstType<Date>>(
     (value): boolean => value instanceof Date,
   );
 }
