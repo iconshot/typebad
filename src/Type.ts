@@ -163,7 +163,9 @@ export class Type<T> {
     return type;
   }
 
-  public default(defaultValue: T | (() => T)): Type<T | undefined> {
+  public default(
+    defaultValue: TypeInputValue<T> | (() => TypeInputValue<T>),
+  ): Type<T | undefined> {
     const type: Type<T | undefined> = new Type();
 
     type.matcher = (value): boolean => {
