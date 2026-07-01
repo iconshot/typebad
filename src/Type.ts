@@ -1,10 +1,10 @@
 export type TypeInternal<T> = T extends Type<infer U> ? U : never;
 
-export type TypeInternalSchema<T extends TypeSchema> = {
+export type TypeInternalObject<T extends TypeObject> = {
   [K in keyof T]: TypeInternal<T[K]>;
 } & {};
 
-export type TypeSchema = Record<string, Type<any>>;
+export type TypeObject = Record<string, Type<any>>;
 
 export type ConstType<T> = T & { __const: true };
 
@@ -260,9 +260,9 @@ export class Type<T> {
     return type;
   }
 
-  public static object<S extends TypeSchema>(
+  public static object<S extends TypeObject>(
     schema: S,
-  ): Type<TypeInternalSchema<S>> {
+  ): Type<TypeInternalObject<S>> {
     const type: Type<Record<string, any>> = new Type();
 
     type.matcher = (value): boolean => {
