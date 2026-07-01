@@ -260,9 +260,9 @@ export class Type<T> {
     return type;
   }
 
-  public static object<S extends TypeObject>(
-    schema: S,
-  ): Type<TypeInternalObject<S>> {
+  public static object<O extends TypeObject>(
+    object: O,
+  ): Type<TypeInternalObject<O>> {
     const type: Type<Record<string, any>> = new Type();
 
     type.matcher = (value): boolean => {
@@ -279,17 +279,17 @@ export class Type<T> {
           const tmpPropertyName =
             propertyName !== null ? `${propertyName}.${key}` : key;
 
-          if (!(key in schema)) {
+          if (!(key in object)) {
             throw new Error(this.getUnknownPropertyError(tmpPropertyName));
           }
         }
       }
 
-      for (const key in schema) {
+      for (const key in object) {
         const tmpPropertyName =
           propertyName !== null ? `${propertyName}.${key}` : key;
 
-        const tmpType = schema[key];
+        const tmpType = object[key];
         const tmpValue = value[key];
 
         if (!(key in value) && !tmpType.allowMissingProperty) {
