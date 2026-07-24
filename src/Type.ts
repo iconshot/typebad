@@ -16,6 +16,8 @@ type IsTuple<T> = T extends readonly any[]
     : true
   : false;
 
+type IsAny<T> = 0 extends 1 & T ? true : false;
+
 export type TypeInput<T> = T extends Type<infer U> ? TypeInputValue<U> : never;
 
 export type TypeInputValue<T> =
@@ -32,7 +34,9 @@ export type TypeInputValue<T> =
 export type TypeInputObject<T> = Simplify<
   {
     [K in keyof T as undefined extends TypeInputValue<T[K]>
-      ? never
+      ? IsAny<TypeInputValue<T[K]>> extends true
+        ? K
+        : never
       : unknown extends TypeInputValue<T[K]>
         ? never
         : K]: TypeInputValue<T[K]>;
@@ -70,33 +74,29 @@ type ExtendedValue<T> =
           ? Record<string, any>
           : T;
 
-export interface ParseOptions {
-  allowUnknownProperties: boolean;
-}
+type ComplexObjectEntry = readonly [Type<any>, Type<any>];
+
+type ComplexObject<T extends readonly ComplexObjectEntry[]> = {
+  [E in T[number] as TypeInternal<E[0]>]: TypeInternal<E[1]>;
+};
 
 export class Type<T> {
   private matcher: (value: any) => boolean = (): boolean => true;
 
-  private parser: (
-    value: T,
-    propertyName: string | null,
-    options: ParseOptions,
-  ) => any = (value): any => value;
+  private parser: (value: T, propertyName: string | null) => any = (
+    value,
+  ): any => value;
 
   private allowMissingProperty: boolean = false;
 
-  private parse(
-    value: any,
-    propertyName: string | null,
-    options: ParseOptions,
-  ): any {
+  private parse(value: any, propertyName: string | null): any {
     const isMatching = this.matcher(value);
 
     if (!isMatching) {
       throw new Error(Type.getValueError(propertyName));
     }
 
-    const parsedValue = this.parser(value, propertyName, options) ?? null;
+    const parsedValue = this.parser(value, propertyName) ?? null;
 
     return parsedValue;
   }
@@ -126,12 +126,12 @@ export class Type<T> {
       return this.matcher(value);
     };
 
-    type.parser = (value, propertyName, options): any => {
+    type.parser = (value, propertyName): any => {
       if (value === null) {
         return null;
       }
 
-      return this.parser(value, propertyName, options);
+      return this.parser(value, propertyName);
     };
 
     type.allowMissingProperty = this.allowMissingProperty;
@@ -150,12 +150,12 @@ export class Type<T> {
       return this.matcher(value);
     };
 
-    type.parser = (value, propertyName, options): any => {
+    type.parser = (value, propertyName): any => {
       if (value === null || value === undefined) {
         return null;
       }
 
-      return this.parser(value, propertyName, options);
+      return this.parser(value, propertyName);
     };
 
     type.allowMissingProperty = true;
@@ -176,17 +176,17 @@ export class Type<T> {
       return this.matcher(value);
     };
 
-    type.parser = (value, propertyName, options): any => {
+    type.parser = (value, propertyName): any => {
       if (value === undefined) {
         const tmpValue =
           typeof defaultValue === "function"
             ? (defaultValue as any)()
             : defaultValue;
 
-        return this.parse(tmpValue, propertyName, options);
+        return this.parse(tmpValue, propertyName);
       }
 
-      return this.parser(value, propertyName, options);
+      return this.parser(value, propertyName);
     };
 
     type.allowMissingProperty = true;
@@ -227,7 +227,7 @@ export class Type<T> {
       return tmpValue === value;
     };
 
-    type.parser = (tmpValue, propertyName, options): V => {
+    type.parser = (tmpValue, propertyName): V => {
       if (tmpValue === undefined) {
         return value;
       }
@@ -249,11 +249,11 @@ export class Type<T> {
       return Array.isArray(value);
     };
 
-    type.parser = (value, propertyName, options): any[] => {
+    type.parser = (value, propertyName): any[] => {
       return value.map((tmpValue, i): any => {
         const tmpPropertyName = `${propertyName ?? ""}[${i}]`;
 
-        return elementType.parse(tmpValue, tmpPropertyName, options);
+        return elementType.parse(tmpValue, tmpPropertyName);
       });
     };
 
@@ -262,7 +262,12 @@ export class Type<T> {
 
   public static object<O extends TypeObject>(
     object: O,
+    options: Partial<{ ignoreUnknownProperties: boolean }> = {},
   ): Type<TypeInternalObject<O>> {
+    const tmpOptions = {
+      ignoreUnknownProperties: options.ignoreUnknownProperties ?? false,
+    };
+
     const type: Type<Record<string, any>> = new Type();
 
     type.matcher = (value): boolean => {
@@ -271,38 +276,127 @@ export class Type<T> {
       );
     };
 
-    type.parser = (value, propertyName, options): Record<string, any> => {
-      const objectValue: Record<string, any> = {};
+    type.parser = (value, propertyName): Record<string, any> => {
+      const resultValue: Record<string, any> = {};
 
-      if (!options.allowUnknownProperties) {
-        for (const key in value) {
+      if (!tmpOptions.ignoreUnknownProperties) {
+        for (const propertyKey in value) {
           const tmpPropertyName =
-            propertyName !== null ? `${propertyName}.${key}` : key;
+            propertyName !== null
+              ? `${propertyName}.${propertyKey}`
+              : propertyKey;
 
-          if (!(key in object)) {
-            throw new Error(this.getUnknownPropertyError(tmpPropertyName));
+          if (!(propertyKey in object)) {
+            throw new Error(`Unknown property "${tmpPropertyName}".`);
           }
         }
       }
 
-      for (const key in object) {
+      for (const propertyKey in object) {
         const tmpPropertyName =
-          propertyName !== null ? `${propertyName}.${key}` : key;
+          propertyName !== null
+            ? `${propertyName}.${propertyKey}`
+            : propertyKey;
 
-        const tmpType = object[key];
-        const tmpValue = value[key];
+        const propertyValueType = object[propertyKey];
+        const propertyValue = value[propertyKey];
 
-        if (!(key in value) && !tmpType.allowMissingProperty) {
-          throw new Error(this.getMissingPropertyError(tmpPropertyName));
+        if (
+          !(propertyKey in value) &&
+          !propertyValueType.allowMissingProperty
+        ) {
+          throw new Error(`Missing property "${tmpPropertyName}".`);
         }
 
-        objectValue[key] = tmpType.parse(tmpValue, tmpPropertyName, options);
+        resultValue[propertyKey] = propertyValueType.parse(
+          propertyValue,
+          tmpPropertyName,
+        );
       }
 
-      return objectValue;
+      return resultValue;
     };
 
     return type as any;
+  }
+
+  public static complexObject<
+    const T extends readonly (readonly [Type<any>, Type<any>])[],
+  >(
+    entries: T & {
+      [K in keyof T]: T[K] extends readonly [
+        infer S extends Type<any>,
+        infer D extends Type<any>,
+      ]
+        ? TypeInternal<S> extends PropertyKey
+          ? T[K]
+          : never
+        : never;
+    },
+    options: Partial<{ ignoreFailures: boolean }> = {},
+  ): Type<Partial<ComplexObject<T>>> {
+    const tmpOptions = {
+      ignoreFailures: options.ignoreFailures ?? false,
+    };
+
+    const type: Type<Partial<ComplexObject<T>>> = new Type();
+
+    type.matcher = (value): boolean => {
+      return (
+        value !== null && !Array.isArray(value) && typeof value === "object"
+      );
+    };
+
+    type.parser = (value, propertyName): Record<string, any> => {
+      const resultValue: Record<string, any> = {};
+
+      loop: for (const propertyKey in value) {
+        const propertyValue = value[propertyKey];
+
+        const tmpPropertyName =
+          propertyName !== null
+            ? `${propertyName}.${propertyKey}`
+            : propertyKey;
+
+        let keyParsingPassed = false;
+
+        for (const [propertyKeyType, propertyValueType] of entries) {
+          try {
+            const parsedPropertyKey = propertyKeyType.parse(
+              propertyKey,
+              tmpPropertyName,
+            );
+
+            keyParsingPassed = true;
+
+            const parsedPropertyValue = propertyValueType.parse(
+              propertyValue,
+              tmpPropertyName,
+            );
+
+            resultValue[parsedPropertyKey] = parsedPropertyValue;
+
+            continue loop;
+          } catch (error: any) {}
+        }
+
+        if (!tmpOptions.ignoreFailures) {
+          if (!keyParsingPassed) {
+            throw new Error(`Invalid key "${tmpPropertyName}".`);
+          }
+
+          if (propertyValue === undefined) {
+            continue;
+          }
+
+          throw new Error(Type.getValueError(tmpPropertyName));
+        }
+      }
+
+      return resultValue;
+    };
+
+    return type;
   }
 
   public static union<U extends Type<any>[]>(
@@ -320,10 +414,10 @@ export class Type<T> {
       return false;
     };
 
-    type.parser = (value, propertyName, options): boolean => {
+    type.parser = (value, propertyName): any => {
       for (const tmpType of types) {
         try {
-          return tmpType.parse(value, propertyName, options);
+          return tmpType.parse(value, propertyName);
         } catch {}
       }
 
@@ -342,13 +436,13 @@ export class Type<T> {
       return Array.isArray(value) && value.length === types.length;
     };
 
-    type.parser = (value, propertyName, options): any[] => {
+    type.parser = (value, propertyName): any[] => {
       return types.map((tmpType, i): any => {
         const tmpValue = value[i];
 
         const tmpPropertyName = `${propertyName ?? ""}[${i}]`;
 
-        return tmpType.parse(tmpValue, tmpPropertyName, options);
+        return tmpType.parse(tmpValue, tmpPropertyName);
       });
     };
 
@@ -364,10 +458,10 @@ export class Type<T> {
       return tmpType.matcher(value);
     };
 
-    type.parser = (value, propertyName, options): any => {
+    type.parser = (value, propertyName): any => {
       const tmpType = callback();
 
-      return tmpType.parser(value, propertyName, options);
+      return tmpType.parser(value, propertyName);
     };
 
     return type as any;
@@ -376,13 +470,8 @@ export class Type<T> {
   public static parse<T extends Type<any>>(
     type: T,
     value: TypeInput<T>,
-    options: Partial<ParseOptions> = {},
   ): TypeOutput<T> {
-    const tmpOptions: ParseOptions = {
-      allowUnknownProperties: options.allowUnknownProperties ?? false,
-    };
-
-    return type.parse(value, null, tmpOptions);
+    return type.parse(value, null);
   }
 
   private static getValueError(propertyName: string | null): string {
@@ -390,14 +479,6 @@ export class Type<T> {
       "Invalid value" +
       (propertyName !== null ? ` for "${propertyName}".` : ".")
     );
-  }
-
-  private static getUnknownPropertyError(propertyName: string): string {
-    return `Unknown property "${propertyName}".`;
-  }
-
-  private static getMissingPropertyError(propertyName: string): string {
-    return `Missing property "${propertyName}".`;
   }
 
   public static readonly String = Type.match<string>(
@@ -422,5 +503,20 @@ export class Type<T> {
 
   public static readonly Date = Type.match<ConstType<Date>>(
     (value): boolean => value instanceof Date,
+  );
+
+  public static readonly Any = Type.match<any>((value): boolean => true);
+
+  public static readonly Object = Type.match<Record<string, any>>(
+    (value): boolean =>
+      value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+
+  public static readonly Null = Type.match<null>(
+    (value): boolean => value === null,
+  );
+
+  public static readonly BigInt = Type.match<bigint>(
+    (value): boolean => typeof value === "bigint",
   );
 }
