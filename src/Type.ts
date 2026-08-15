@@ -203,7 +203,7 @@ export class Type<T> {
   }
 
   public static enum<const V extends readonly (string | number | boolean)[]>(
-    values: V,
+    ...values: V
   ): Type<V[number]> {
     const type: Type<V[number]> = new Type();
 
@@ -400,7 +400,7 @@ export class Type<T> {
   }
 
   public static union<U extends Type<any>[]>(
-    types: U,
+    ...types: U
   ): Type<TypeInternal<U[number]>> {
     const type: Type<TypeInternal<U[number]>> = new Type();
 
@@ -428,7 +428,7 @@ export class Type<T> {
   }
 
   public static tuple<const U extends Type<any>[]>(
-    types: U,
+    ...types: U
   ): Type<{ [K in keyof U]: TypeInternal<U[K]> }> {
     const type = new Type<any[]>();
 
